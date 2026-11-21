@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "kubernetes": {
+      "command": "python",
+      "args": ["-m", "devops_agents.servers.kubernetes"],
+      "env": { "DEVOPS_BACKEND": "mock" }
+    },
+    "jenkins": {
+      "command": "python",
+      "args": ["-m", "devops_agents.servers.jenkins"],
+      "env": { "DEVOPS_BACKEND": "mock" }
+    },
+    "prometheus": {
+      "command": "python",
+      "args": ["-m", "devops_agents.servers.prometheus"],
+      "env": { "DEVOPS_BACKEND": "mock" }
+    }
+  }
+}

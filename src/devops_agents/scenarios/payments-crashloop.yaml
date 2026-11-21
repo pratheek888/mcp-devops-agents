@@ -1,0 +1,182 @@
+# Incident scenario used by the mock backends.
+# Story: release 1.8.0 of payments-api renamed the DB host env var, the Helm values
+# weren't updated, pods crash-loop, and the 5xx alert fires. Rolling back to
+# revision 13 (1.7.3) restores service.
+name: payments-crashloop
+description: payments-api CrashLoopBackOff in prod after deploy of 1.8.0
+
+kubernetes:
+  namespaces:
+    prod:
+      deployments:
+        - name: payments-api
+          replicas: 3
+          ready: 0
+          image: registry.example.com/payments-api:1.8.0
+          revision: 14
+          history:
+            - revision: 13
+              image: registry.example.com/payments-api:1.7.3
+              change_cause: "jenkins build #141"
+              deployed_at: "2026-11-20T09:12:00Z"
+            - revision: 14
+              image: registry.example.com/payments-api:1.8.0
+              change_cause: "jenkins build #142"
+              deployed_at: "2026-11-21T17:21:00Z"
+          healthy_logs: |
+            INFO  starting payments-api 1.7.3
+            INFO  connected to postgres at payments-db.prod.svc:5432
+            INFO  listening on :8080
+        - name: orders-api
+          replicas: 2
+          ready: 2
+          image: registry.example.com/orders-api:3.2.1
+          revision: 7
+          history:
+            - revision: 7
+              image: registry.example.com/orders-api:3.2.1
+              change_cause: "jenkins build #88"
+              deployed_at: "2026-11-18T11:02:00Z"
+      pods:
+        - name: payments-api-6c8f9d7b5-x2kqp
+          deployment: payments-api
+          phase: Running
+          status: CrashLoopBackOff
+          ready: false
+          restarts: 7
+          image: registry.example.com/payments-api:1.8.0
+          node: ip-10-20-1-34.ap-south-1.compute.internal
+          last_state: "Terminated (Error, exit code 1)"
+          env:
+            PAYMENTS_DB_HOST: ""
+            DB_HOST: payments-db.prod.svc
+          logs: |
+            INFO  starting payments-api 1.8.0
+            INFO  loading config from environment
+            WARN  PAYMENTS_DB_HOST is empty, falling back to localhost
+            ERROR dial tcp 127.0.0.1:5432: connect: connection refused
+            FATAL could not connect to database after 5 attempts, exiting
+        - name: payments-api-6c8f9d7b5-m9wzt
+          deployment: payments-api
+          phase: Running
+          status: CrashLoopBackOff
+          ready: false
+          restarts: 6
+          image: registry.example.com/payments-api:1.8.0
+          node: ip-10-20-2-17.ap-south-1.compute.internal
+          last_state: "Terminated (Error, exit code 1)"
+          env:
+            PAYMENTS_DB_HOST: ""
+            DB_HOST: payments-db.prod.svc
+          logs: |
+            INFO  starting payments-api 1.8.0
+            WARN  PAYMENTS_DB_HOST is empty, falling back to localhost
+            FATAL could not connect to database after 5 attempts, exiting
+        - name: orders-api-5f7c6b9d8-q4lrn
+          deployment: orders-api
+          phase: Running
+          status: Running
+          ready: true
+          restarts: 0
+          image: registry.example.com/orders-api:3.2.1
+          node: ip-10-20-1-34.ap-south-1.compute.internal
+          logs: |
+            INFO  orders-api 3.2.1 ready
+            WARN  upstream payments-api returned 503 (retrying)
+      events:
+        - type: Warning
+          reason: BackOff
+          object: pod/payments-api-6c8f9d7b5-x2kqp
+          message: Back-off restarting failed container payments-api
+          count: 21
+        - type: Warning
+          reason: Unhealthy
+          object: pod/payments-api-6c8f9d7b5-m9wzt
+          message: "Readiness probe failed: connection refused"
+          count: 14
+        - type: Normal
+          reason: ScalingReplicaSet
+          object: deployment/payments-api
+          message: Scaled up replica set payments-api-6c8f9d7b5 to 3
+          count: 1
+        - type: Normal
+          reason: ScalingReplicaSet
+          object: deployment/payments-api
+          message: Scaled down replica set payments-api-74b5c8f6d9 to 0
+          count: 1
+
+ci:
+  jobs:
+    - name: payments-api-deploy
+      url: https://jenkins.example.com/job/payments-api-deploy/
+      builds:
+        - number: 142
+          result: SUCCESS
+          started_at: "2026-11-21T17:14:00Z"
+          duration_s: 412
+          parameters: { ENV: prod, IMAGE_TAG: "1.8.0" }
+          changes:
+            - commit: 9f3c2ab
+              author: dev-a
+              message: "refactor(config): rename DB_HOST to PAYMENTS_DB_HOST"
+              files: [src/config.py, README.md]
+          log: |
+            [Pipeline] stage (Build)
+            mvn -B package ... BUILD SUCCESS
+            [Pipeline] stage (Security)
+            sonar-scanner ... Quality gate PASSED
+            gitleaks detect ... no leaks found
+            [Pipeline] stage (Deploy prod)
+            helm upgrade payments-api charts/payments-api -f values-prod.yaml --set image.tag=1.8.0
+            Release "payments-api" has been upgraded. Happy Helming!
+            NOTE: values-prod.yaml still sets env DB_HOST (not PAYMENTS_DB_HOST)
+            Finished: SUCCESS
+        - number: 141
+          result: SUCCESS
+          started_at: "2026-11-20T09:05:00Z"
+          duration_s: 398
+          parameters: { ENV: prod, IMAGE_TAG: "1.7.3" }
+          changes:
+            - commit: 1d0e7c4
+              author: dev-b
+              message: "fix: retry idempotent payment captures"
+              files: [src/capture.py]
+          log: |
+            helm upgrade payments-api ... --set image.tag=1.7.3
+            Finished: SUCCESS
+    - name: orders-api-deploy
+      url: https://jenkins.example.com/job/orders-api-deploy/
+      builds:
+        - number: 88
+          result: SUCCESS
+          started_at: "2026-11-18T10:55:00Z"
+          duration_s: 301
+          parameters: { ENV: prod, IMAGE_TAG: "3.2.1" }
+          changes: []
+          log: "Finished: SUCCESS"
+
+metrics:
+  error_rate:        # fraction of 5xx responses
+    payments-api: 0.38
+    orders-api: 0.041
+  latency_p95_s:
+    payments-api: 2.9
+    orders-api: 0.42
+  alerts:
+    - name: PaymentsAPIHighErrorRate
+      severity: critical
+      service: payments-api
+      summary: "5xx ratio 38% for 10m (SLO 99.9%)"
+      active_since: "2026-11-21T17:24:00Z"
+    - name: KubePodCrashLooping
+      severity: warning
+      service: payments-api
+      summary: "Pod prod/payments-api-6c8f9d7b5-x2kqp is crash looping"
+      active_since: "2026-11-21T17:23:00Z"
+    - name: OrdersAPIUpstreamErrors
+      severity: warning
+      service: orders-api
+      summary: "4.1% errors calling payments-api"
+      active_since: "2026-11-21T17:26:00Z"
+  healthy_after_rollback:
+    error_rate: { payments-api: 0.001, orders-api: 0.002 }

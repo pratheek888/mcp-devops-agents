@@ -1,6 +1,7 @@
 # mcp-devops-agents
 
 [![ci](https://github.com/pratheek888/mcp-devops-agents/actions/workflows/ci.yaml/badge.svg)](https://github.com/pratheek888/mcp-devops-agents/actions/workflows/ci.yaml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/pratheek888/mcp-devops-agents/badge)](https://scorecard.dev/viewer/?uri=github.com/pratheek888/mcp-devops-agents)
 ![MCP](https://img.shields.io/badge/MCP-Model%20Context%20Protocol-black)
 ![Claude](https://img.shields.io/badge/LLM-Claude-D97757?logo=anthropic&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)
